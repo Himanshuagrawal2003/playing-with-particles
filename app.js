@@ -1,11 +1,15 @@
 /**
- * MorphOS // 1500 Particles Real-Time Morphing Engine
+ * MorphOS // Particle Morphing Engine
  * Pure math & code canvas visualization
  */
 
-// Constants & Configurations
-const PARTICLE_COUNT = 3000;
-const FOV = 500; // Camera distance / Field of View
+// ── Device-Adaptive Particle Count ─────────────────────────────────────────
+// Fewer particles on weaker devices for smooth 60fps
+const IS_MOBILE = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || window.innerWidth < 500;
+const IS_TABLET = !IS_MOBILE && window.innerWidth < 1024;
+const PARTICLE_COUNT = IS_MOBILE ? 1200 : IS_TABLET ? 2000 : 3000;
+
+const FOV = 500;
 const BASE_ROTATION_SPEED = 0.005;
 
 // State Variables
@@ -27,6 +31,10 @@ let centerY = 0;
 let zoom = 1.0;
 let targetZoom = 1.0;
 
+// Logical canvas size (CSS pixels) — separate from physical canvas.width/height (device pixels)
+let logicalW = 0;
+let logicalH = 0;
+
 // Camera angles & velocities for drag rotation
 let angleX = 0.0; // Pitch
 let angleY = 0.0; // Yaw
@@ -43,12 +51,17 @@ const SHAPE_ORDER = ['sphere', 'donut', 'helix', 'cube', 'pipe', 'cylinder', 'co
 
 // Stats tracking
 let fps = 60;
+let smoothFps = 60;          // exponential moving average for stable FPS reading
 let lastFrameTime = performance.now();
 let lastFpsUpdateTime = performance.now();
 let frameCount = 0;
+let renderFrameCount = 0;    // total frames rendered (for skip-every-N tricks)
 let globalTime = 0;
 let particleSizeMultiplier = 1.0;
 let targetParticleSizeMultiplier = 1.0;
+
+// Pre-allocated sorted array (avoid new allocation every frame)
+let sortedParticles = [];
 
 // Color Themes configuration
 const THEMES = {
@@ -280,11 +293,15 @@ class Particle {
 function generateMatrixGrid(time) {
   const points = [];
   
+  // Use logical size (CSS pixels) — consistent with DPR-scaled canvas
+  const screenW = logicalW || window.innerWidth;
+  const screenH = logicalH || window.innerHeight;
+
   // Calculate column count dynamically depending on screen size to prevent text overlaps
   let cols = 15;
-  if (window.innerWidth < 500) {
+  if (screenW < 500) {
     cols = 6;   // Mobile: 6 columns
-  } else if (window.innerWidth < 1024) {
+  } else if (screenW < 1024) {
     cols = 10;  // Tablet: 10 columns
   }
   
@@ -293,8 +310,8 @@ function generateMatrixGrid(time) {
   const gridCount = cols * setsPerCol * 4;
   
   // Calculate width and height based on screen dimensions divided by current camera zoom to fill full display
-  const w = window.innerWidth / Math.max(0.1, zoom);
-  const h = window.innerHeight / Math.max(0.1, zoom);
+  const w = screenW / Math.max(0.1, zoom);
+  const h = screenH / Math.max(0.1, zoom);
   
   // Indent columns slightly to prevent text clipping at screen borders
   const colSpacing = (w * 0.9) / (cols - 1);
@@ -634,7 +651,7 @@ function drawHackingBackground(timestamp) {
     ctx.fillText(binText, stream.x + 10, stream.y + 15);
     
     stream.y += stream.speed;
-    if (stream.y > canvas.height + 50) {
+    if (stream.y > logicalH + 50) {
       stream.y = Math.random() * -200 - 50;
       stream.snippetIndex = Math.floor(Math.random() * CODE_SNIPPETS.length);
       stream.speed = Math.random() * 1.5 + 0.8;
@@ -656,6 +673,8 @@ function init() {
   for (let i = 0; i < PARTICLE_COUNT; i++) {
     particles.push(new Particle(i));
   }
+  // Pre-fill sortedParticles so first frame is valid
+  sortedParticles = [...particles];
   
   // Pre-generate mathematical shape targets
   shapes = {
@@ -671,33 +690,94 @@ function init() {
     scatter: generateScatter()
   };
   
-  // Setup Event Listeners
-  window.addEventListener('resize', resizeCanvas);
-  
-  window.addEventListener('mousemove', (e) => {
-    // Record current mouse position relative to canvas
-    const rect = canvas.getBoundingClientRect();
-    mousePosition.x = e.clientX - rect.left;
-    mousePosition.y = e.clientY - rect.top;
-  });
-  
-  canvas.addEventListener('mouseleave', () => {
-    mousePosition.x = null;
-    mousePosition.y = null;
-  });
-  
-  window.addEventListener('touchmove', (e) => {
-    if (e.touches.length > 0) {
-      const rect = canvas.getBoundingClientRect();
-      mousePosition.x = e.touches[0].clientX - rect.left;
-      mousePosition.y = e.touches[0].clientY - rect.top;
+  // ── Unified Pointer Events (mouse + touch + stylus) ──────────────────
+  // Using PointerEvents API so one set of handlers works everywhere.
+
+  let dragActive   = false;
+  let lastPointerX = 0;
+  let lastPointerY = 0;
+
+  // Pinch-to-zoom tracking
+  let pinchStartDist = 0;
+  let pinchStartZoom = 1.0;
+  const activePointers = new Map();
+
+  canvas.addEventListener('pointerdown', (e) => {
+    canvas.setPointerCapture(e.pointerId);
+    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (activePointers.size === 1) {
+      // Single pointer → start drag rotate
+      dragActive   = true;
+      lastPointerX = e.clientX;
+      lastPointerY = e.clientY;
+    } else if (activePointers.size === 2) {
+      // Two fingers → start pinch
+      dragActive = false;
+      const pts = [...activePointers.values()];
+      pinchStartDist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+      pinchStartZoom = targetZoom;
     }
   });
-  
-  window.addEventListener('touchend', () => {
-    mousePosition.x = null;
-    mousePosition.y = null;
+
+  canvas.addEventListener('pointermove', (e) => {
+    activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const rect = canvas.getBoundingClientRect();
+
+    if (activePointers.size === 2) {
+      // Pinch zoom
+      const pts = [...activePointers.values()];
+      const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+      const scale = dist / pinchStartDist;
+      targetZoom = Math.max(0.4, Math.min(3.0, pinchStartZoom * scale));
+      return;
+    }
+
+    if (activePointers.size === 1) {
+      // Update mouse-effect position
+      mousePosition.x = e.clientX - rect.left;
+      mousePosition.y = e.clientY - rect.top;
+
+      if (dragActive) {
+        // Drag to rotate
+        const dx = e.clientX - lastPointerX;
+        const dy = e.clientY - lastPointerY;
+        targetAngleY += dx * 0.006;
+        targetAngleX += dy * 0.006;
+        baseYaw = targetAngleY;
+        lastPointerX = e.clientX;
+        lastPointerY = e.clientY;
+      }
+    }
   });
+
+  const endPointer = (e) => {
+    activePointers.delete(e.pointerId);
+    if (activePointers.size === 0) {
+      dragActive = false;
+      mousePosition.x = null;
+      mousePosition.y = null;
+    } else if (activePointers.size === 1) {
+      // One finger left after pinch — restart drag from current position
+      const [ptr] = activePointers.values();
+      dragActive   = true;
+      lastPointerX = ptr.x;
+      lastPointerY = ptr.y;
+    }
+  };
+
+  canvas.addEventListener('pointerup',     endPointer);
+  canvas.addEventListener('pointercancel', endPointer);
+
+  // Prevent browser scroll/zoom while interacting with canvas on mobile
+  canvas.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+  canvas.addEventListener('touchmove',  (e) => e.preventDefault(), { passive: false });
+
+  // Resize handler (also listen to visualViewport for mobile browser chrome changes)
+  window.addEventListener('resize', resizeCanvas);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', resizeCanvas);
+  }
   // Initialize Audio Player
   initAudio();
   
@@ -708,46 +788,133 @@ function init() {
 
 function initAudio() {
   const audio = document.getElementById('bgAudio');
-  if (!audio) return;
+  if (!audio) { console.warn('[Audio] #bgAudio element not found'); return; }
 
   let unlocked = false;
 
-  function unmute() {
-    if (unlocked) return;
-    unlocked = true;
-    audio.muted = false;
-    audio.volume = 1.0;
-    if (audio.paused) {
-      audio.play().catch(() => {});
-    }
-    document.removeEventListener('mousedown', unmute);
-    document.removeEventListener('touchstart', unmute);
-    document.removeEventListener('keydown', unmute);
+  // Pulsing hint badge
+  const hint = document.createElement('div');
+  hint.id = 'audioHint';
+  hint.innerHTML = '🎵 <span>click anywhere to play music</span>';
+  hint.style.cssText = `
+    position: fixed;
+    bottom: 22px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(0,240,255,0.8);
+    font-family: 'Outfit', sans-serif;
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    background: rgba(0,0,0,0.45);
+    border: 1px solid rgba(0,240,255,0.3);
+    border-radius: 20px;
+    padding: 6px 16px;
+    pointer-events: none;
+    z-index: 9999;
+    backdrop-filter: blur(6px);
+    animation: hintPulse 2s ease-in-out infinite;
+  `;
+  const style = document.createElement('style');
+  style.textContent = `@keyframes hintPulse { 0%,100%{opacity:.8} 50%{opacity:.25} }`;
+  document.head.appendChild(style);
+  document.body.appendChild(hint);
+
+  function hideHint() {
+    hint.style.transition = 'opacity 0.6s ease';
+    hint.style.opacity = '0';
+    setTimeout(() => { if (hint.parentNode) hint.remove(); }, 700);
   }
 
-  // HTML autoplay+muted already starts audio (if browser allows).
-  // Try unmuting automatically after a short delay.
-  setTimeout(() => {
-    if (!unlocked) unmute();
-  }, 500);
+  function fadeIn() {
+    audio.volume = 0;
+    const iv = setInterval(() => {
+      audio.volume = Math.min(1.0, audio.volume + 0.02);
+      if (audio.volume >= 1.0) clearInterval(iv);
+    }, 20);
+  }
 
-  // Fallback: first mousedown (fires on press, not release — feels instant)
-  document.addEventListener('mousedown', unmute, { passive: true });
-  document.addEventListener('touchstart', unmute, { passive: true });
-  document.addEventListener('keydown',    unmute, { passive: true });
+  function unlock() {
+    if (unlocked) return;
+    console.log('[Audio] unlock called — paused:', audio.paused, 'muted:', audio.muted);
+    unlocked = true;
+
+    // Always force-stop mute first
+    audio.muted = false;
+
+    const doPlay = () => {
+      audio.play()
+        .then(() => {
+          console.log('[Audio] playing ✅');
+          fadeIn();
+          hideHint();
+        })
+        .catch(err => {
+          console.error('[Audio] play() rejected:', err);
+          unlocked = false; // allow retry
+        });
+    };
+
+    if (audio.paused) {
+      doPlay();
+    } else {
+      // Already playing (just muted) — unmuting + fade is enough
+      console.log('[Audio] was already playing, unmuted ✅');
+      fadeIn();
+      hideHint();
+    }
+  }
+
+  // Register on every trusted gesture — no once:true so retry works on failure
+  ['mousedown', 'touchstart', 'keydown'].forEach(evt => {
+    document.addEventListener(evt, unlock, { passive: true });
+  });
+
+  // Best-effort: try auto-unmute after page load (works in permissive browsers)
+  setTimeout(() => {
+    if (unlocked) return;
+    console.log('[Audio] auto-unmute attempt — paused:', audio.paused);
+    audio.muted = false;
+    if (audio.paused) {
+      audio.play()
+        .then(() => { console.log('[Audio] auto-play OK ✅'); unlocked = true; hideHint(); })
+        .catch(err => { console.warn('[Audio] auto-play blocked:', err.message); audio.muted = true; });
+    }
+  }, 400);
 }
 
 function resizeCanvas() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-  centerX = canvas.width / 2;
-  centerY = canvas.height / 2;
-  
-  // Adapt zoom automatically on mobile/tablets to maximize shape size without clipping
-  if (canvas.width < 500) {
-    targetZoom = 0.78;
-    zoom = 0.78;
-  } else if (canvas.width < 1024) {
+  // Use visualViewport on mobile so canvas fills the real visible area
+  const vvp = window.visualViewport;
+  const W = vvp ? Math.round(vvp.width)  : window.innerWidth;
+  const H = vvp ? Math.round(vvp.height) : window.innerHeight;
+
+  // HiDPI / Retina support — cap at 2× (3× gives huge buffers, negligible visual gain)
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+  // Store logical size for coordinate math
+  logicalW = W;
+  logicalH = H;
+
+  // Physical canvas buffer = logical × DPR
+  canvas.width  = Math.round(W * dpr);
+  canvas.height = Math.round(H * dpr);
+
+  // Keep canvas element at CSS size so layout isn't affected
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
+
+  // Scale ctx so all drawing commands use logical pixels automatically
+  ctx.setTransform(1, 0, 0, 1, 0, 0); // reset first
+  ctx.scale(dpr, dpr);
+
+  centerX = W / 2;
+  centerY = H / 2;
+
+  // Zoom scale: fill screen properly across device sizes
+  if (W < 500) {
+    targetZoom = 1.0;
+    zoom = 1.0;
+  } else if (W < 1024) {
     targetZoom = 1.1;
     zoom = 1.1;
   } else {
@@ -855,26 +1022,33 @@ function updateCSSTheme(themeName) {
 function loop(timestamp) {
   globalTime = timestamp;
   
-  // 1. Calculate Delta Time & FPS
+  // 1. FPS tracking (exponential moving average for stability)
   const delta = timestamp - lastFrameTime;
   lastFrameTime = timestamp;
-  
+  renderFrameCount++;
+
   frameCount++;
   if (timestamp - lastFpsUpdateTime >= 1000) {
     fps = Math.round((frameCount * 1000) / (timestamp - lastFpsUpdateTime));
+    smoothFps = smoothFps * 0.7 + fps * 0.3; // smooth to avoid jitter
     frameCount = 0;
     lastFpsUpdateTime = timestamp;
   }
+
+  // Quality tier based on smoothed FPS
+  // HIGH: >=50fps | MED: 30-49fps | LOW: <30fps
+  const highQuality = smoothFps >= 50;
+  const midQuality  = smoothFps >= 30;
   
-  // Interpolate and ease active particle sizes based on current shape profile
+  // 2. Adaptive particle size based on current shape
   targetParticleSizeMultiplier = SHAPE_PARTICLE_SIZES[currentShapeName] || 1.0;
   particleSizeMultiplier += (targetParticleSizeMultiplier - particleSizeMultiplier) * 0.08;
-  
-  // 2. Clear canvas with slight alpha trailing for subtle motion blur
+
+  // 3. Clear canvas (logical coords — ctx already scaled by DPR)
   ctx.fillStyle = 'rgba(3, 3, 7, 0.4)';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  
-  // Draw falling hacking code background rain
+  ctx.fillRect(0, 0, logicalW, logicalH);
+
+  // Draw hacking code background
   drawHackingBackground(timestamp);
   
   // 3. Handle Auto-Morphing phase-based schedule
@@ -1010,58 +1184,61 @@ function loop(timestamp) {
   angleY += (targetAngleY - angleY) * 0.18;
   zoom += (targetZoom - zoom) * 0.12; // Snappy zoom easing for fast transitions
   
-  // 5. Update and project all particles
+  // 4. Update and project all particles
   for (let i = 0; i < PARTICLE_COUNT; i++) {
     particles[i].update(mousePosition.x, mousePosition.y, mouseMode, morphSpeed);
     particles[i].project(angleX, angleY, centerX, centerY, zoom);
   }
+
+  // 5. Depth-sort (Painters Algorithm)
+  // Only re-sort every 2 frames at mid quality, every 3 at low — saves ~4ms/frame
+  const sortInterval = highQuality ? 1 : midQuality ? 2 : 3;
+  if (renderFrameCount % sortInterval === 0) {
+    // In-place copy into pre-allocated array, then sort
+    for (let i = 0; i < PARTICLE_COUNT; i++) sortedParticles[i] = particles[i];
+    sortedParticles.sort((a, b) => b.rotZ - a.rotZ);
+  }
   
-  // 6. 3D depth-sorting (Painters Algorithm)
-  // Sort particle references descending by rotZ (larger rotZ is further away, rendered first)
-  const sortedParticles = [...particles].sort((a, b) => b.rotZ - a.rotZ);
-  
-  // 7. Render Connections (Skeletal Mathematical mesh lines)
-  // Draw wireframe links if enabled
-  if (connectionThreshold > 0) {
-    ctx.lineWidth = 0.55;
-    
-    const drawLink = (p1, p2) => {
-      const dist3D = Math.hypot(p1.x - p2.x, p1.y - p2.y, p1.z - p2.z);
-      if (dist3D < connectionThreshold * 1.5) {
-        if (p1.px > 0 && p1.px < canvas.width && p1.py > 0 && p1.py < canvas.height &&
-            p2.px > 0 && p2.px < canvas.width && p2.py > 0 && p2.py < canvas.height) {
-          
-          const depthAlpha = Math.min(p1.pAlpha, p2.pAlpha);
-          const opacity = (1.0 - (dist3D / (connectionThreshold * 1.5))) * depthAlpha * 0.28;
-          
-          const pGrad = ctx.createLinearGradient(p1.px, p1.py, p2.px, p2.py);
-          pGrad.addColorStop(0, p1.getColor(colorPreset, timestamp).replace(/[^,]+(?=\))/, opacity));
-          pGrad.addColorStop(1, p2.getColor(colorPreset, timestamp).replace(/[^,]+(?=\))/, opacity));
-          
-          ctx.strokeStyle = pGrad;
-          ctx.beginPath();
-          ctx.moveTo(p1.px, p1.py);
-          ctx.lineTo(p2.px, p2.py);
-          ctx.stroke();
-        }
-      }
-    };
+  // 6. Render Connections (wireframe mesh lines)
+  // Skip on low FPS or mobile to save GPU
+  if (connectionThreshold > 0 && midQuality && !IS_MOBILE) {
+    // Batch all lines into ONE path per color — avoids thousands of individual stroke() calls
+    // Use the theme's primary color at low opacity instead of per-line gradients
+    const theme = THEMES[colorPreset];
+    const [r, g, b] = theme.primary;
+    const lineOpacity = highQuality ? 0.22 : 0.15;
+    ctx.strokeStyle = `rgba(${r},${g},${b},${lineOpacity})`;
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+
+    const connThreshSq = (connectionThreshold * 1.5) * (connectionThreshold * 1.5);
 
     for (let i = 0; i < PARTICLE_COUNT; i++) {
       const p1 = particles[i];
-      if (currentShapeName !== 'matrix') {
-        if (i < PARTICLE_COUNT - 1) {
-          drawLink(p1, particles[i + 1]);
+      if (currentShapeName === 'matrix') continue;
+      if (p1.px < 0 || p1.px > logicalW || p1.py < 0 || p1.py > logicalH) continue;
+
+      if (i < PARTICLE_COUNT - 1) {
+        const p2 = particles[i + 1];
+        const dx = p1.x - p2.x, dy = p1.y - p2.y, dz = p1.z - p2.z;
+        if (dx*dx + dy*dy + dz*dz < connThreshSq) {
+          ctx.moveTo(p1.px, p1.py);
+          ctx.lineTo(p2.px, p2.py);
         }
       }
-      
-      // Connect vertical rings/columns to make Cylinder, Cone, and Pipe solid 3D wireframe grids
+
       if (currentShapeName === 'pipe' || currentShapeName === 'cylinder' || currentShapeName === 'cone') {
         if (i < PARTICLE_COUNT - 30) {
-          drawLink(p1, particles[i + 30]);
+          const p2 = particles[i + 30];
+          const dx = p1.x - p2.x, dy = p1.y - p2.y, dz = p1.z - p2.z;
+          if (dx*dx + dy*dy + dz*dz < connThreshSq) {
+            ctx.moveTo(p1.px, p1.py);
+            ctx.lineTo(p2.px, p2.py);
+          }
         }
       }
     }
+    ctx.stroke(); // ONE stroke call for all lines
   }
   
   // 8. Render Particles
@@ -1069,7 +1246,7 @@ function loop(timestamp) {
     const p = sortedParticles[i];
     
     // Skip rendering if particle is off-screen
-    if (p.px < -20 || p.px > canvas.width + 20 || p.py < -20 || p.py > canvas.height + 20) {
+    if (p.px < -20 || p.px > logicalW + 20 || p.py < -20 || p.py > logicalH + 20) {
       continue;
     }
     

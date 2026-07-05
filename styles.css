@@ -1,48 +1,92 @@
+/* =====================================================
+   MorphOS — Responsive Stylesheet
+   Breakpoints: mobile ≤480 | tablet 481-1023 | desktop ≥1024
+   ===================================================== */
+
 :root {
   --bg-color: #030307;
-  
+
   /* Color Engine Accent Variables */
-  --accent-cyan: #00f0ff;
-  --accent-magenta: #ff007f;
-  --accent-primary: #00f0ff;
+  --accent-cyan:      #00f0ff;
+  --accent-magenta:   #ff007f;
+  --accent-primary:   #00f0ff;
   --accent-secondary: #ff007f;
 
   --font-sans: 'Outfit', sans-serif;
+
+  /* Responsive spacing scale */
+  --space-xs:  8px;
+  --space-sm: 12px;
+  --space-md: 20px;
+  --space-lg: 28px;
 }
 
-/* Reset and Base Styles */
-* {
+/* ── Reset ─────────────────────────────────────────── */
+*, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
-body, html {
+/* ── Base ──────────────────────────────────────────── */
+html {
   width: 100%;
   height: 100%;
+  height: 100dvh; /* dynamic viewport height — adapts when mobile address bar shows/hides */
+  overscroll-behavior: none;
+}
+
+body {
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
   overflow: hidden;
   background-color: var(--bg-color);
   font-family: var(--font-sans);
   user-select: none;
   -webkit-user-select: none;
+  /* Respect device safe areas (notch / home indicator) */
+  padding-top:    env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left:   env(safe-area-inset-left);
+  padding-right:  env(safe-area-inset-right);
 }
 
-/* Background Ambient Glows */
+/* ── Canvas ────────────────────────────────────────── */
+canvas {
+  position: fixed; /* fixed instead of absolute — sticks to viewport even on mobile scroll */
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  width:  100vw;
+  height: 100dvh; /* fills true visible area on mobile */
+  display: block;
+  z-index: 1;
+  cursor: grab;
+  touch-action: none;
+}
+
+canvas:active {
+  cursor: grabbing;
+}
+
+/* ── Ambient Background Glows ─────────────────────── */
 .ambient-glow {
   position: absolute;
   border-radius: 50%;
-  filter: blur(120px);
+  filter: blur(100px);
   z-index: 0;
   pointer-events: none;
-  opacity: 0.35;
-  transition: all 1.8s ease-in-out;
+  opacity: 0.32;
+  transition: background 1.8s ease-in-out;
 }
 
 .bg-glow-1 {
-  top: -10%;
-  left: -10%;
-  width: 50vw;
-  height: 50vw;
+  top: -12%;
+  left: -12%;
+  width: 55vw;
+  height: 55vw;
   background: radial-gradient(circle, var(--accent-primary) 0%, transparent 70%);
   animation: floatGlow1 25s infinite alternate ease-in-out;
 }
@@ -50,45 +94,34 @@ body, html {
 .bg-glow-2 {
   bottom: -15%;
   right: -15%;
-  width: 60vw;
-  height: 60vw;
+  width: 65vw;
+  height: 65vw;
   background: radial-gradient(circle, var(--accent-secondary) 0%, transparent 70%);
   animation: floatGlow2 30s infinite alternate ease-in-out;
 }
 
 @keyframes floatGlow1 {
-  0% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(10vw, 5vh) scale(1.1); }
+  0%   { transform: translate(0,    0)    scale(1);   }
+  50%  { transform: translate(10vw, 5vh)  scale(1.1); }
   100% { transform: translate(-5vw, 15vh) scale(0.9); }
 }
 
 @keyframes floatGlow2 {
-  0% { transform: translate(0, 0) scale(0.9); }
-  50% { transform: translate(-12vw, -10vh) scale(1.15); }
-  100% { transform: translate(8vw, 5vh) scale(1); }
+  0%   { transform: translate(0,     0)    scale(0.9);  }
+  50%  { transform: translate(-12vw,-10vh) scale(1.15); }
+  100% { transform: translate(8vw,   5vh)  scale(1);    }
 }
 
-/* Fullscreen Canvas */
-canvas {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
-  z-index: 1;
-  cursor: grab;
+/* ── Audio Hint Badge (injected by JS) ────────────── */
+#audioHint {
+  font-size: clamp(11px, 2.5vw, 14px) !important;
 }
 
-canvas:active {
-  cursor: grabbing;
-}
-
-/* Floating Audio Equalizer Controls */
+/* ── Audio Control Button ─────────────────────────── */
 .audio-control {
   position: fixed;
-  top: 20px;
-  right: 20px;
+  top: var(--space-md);
+  right: var(--space-md);
   z-index: 1000;
   background: rgba(3, 3, 7, 0.7);
   backdrop-filter: blur(10px);
@@ -101,14 +134,19 @@ canvas:active {
   gap: 10px;
   cursor: pointer;
   box-shadow: 0 0 15px rgba(3, 3, 7, 0.5);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.3s ease,
+              border-color 0.3s ease;
   user-select: none;
   -webkit-user-select: none;
+  /* Minimum tap target 44px */
+  min-height: 44px;
+  min-width: 44px;
 }
 
 .audio-control:hover {
   transform: translateY(-2px);
-  box-shadow: 0 0 20px rgba(var(--accent-primary), 0.25);
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.2);
   border-color: var(--accent-primary);
 }
 
@@ -132,17 +170,18 @@ canvas:active {
   font-weight: 700;
   letter-spacing: 1.5px;
   text-transform: uppercase;
-  transition: all 0.3s ease;
+  color: #fff;
+  transition: color 0.3s ease, text-shadow 0.3s ease;
 }
 
-/* Equalizer Jumping Bars */
+/* ── Equalizer Bars ───────────────────────────────── */
 .bar {
   display: inline-block;
   width: 3px;
   height: 15px;
   background: var(--accent-primary);
   border-radius: 3px;
-  transition: all 0.3s ease;
+  transition: height 0.3s ease, background 0.3s ease;
 }
 
 .audio-control.muted .bar {
@@ -156,21 +195,133 @@ canvas:active {
 .audio-control.playing .bar-4 { animation: equalizerKey 1.1s ease-in-out infinite alternate 0.1s; }
 
 @keyframes equalizerKey {
-  0% { height: 4px; }
+  0%   { height: 4px;  }
   100% { height: 18px; }
 }
 
-/* Responsive adjustment for Mobile viewports */
-@media (max-width: 480px) {
-  .audio-control {
-    top: 15px;
-    right: 15px;
-    padding: 8px 14px;
-    gap: 8px;
+/* ── Hint pulse (defined here so it doesn't flicker on inject) */
+@keyframes hintPulse {
+  0%,100% { opacity: .8;  }
+  50%      { opacity: .2;  }
+}
+
+/* =====================================================
+   RESPONSIVE BREAKPOINTS
+   ===================================================== */
+
+/* ── Tablet  481px – 1023px ─────────────────────────── */
+@media (min-width: 481px) and (max-width: 1023px) {
+  .ambient-glow {
+    filter: blur(80px);
+    opacity: 0.28;
   }
+
+  .bg-glow-1 { width: 60vw; height: 60vw; }
+  .bg-glow-2 { width: 70vw; height: 70vw; }
+
+  .audio-control {
+    top: var(--space-sm);
+    right: var(--space-sm);
+    padding: 9px 16px;
+    gap: 9px;
+  }
+
+  .control-label {
+    font-size: 10px;
+    letter-spacing: 1.2px;
+  }
+}
+
+/* ── Mobile  ≤480px ─────────────────────────────────── */
+@media (max-width: 480px) {
+  :root {
+    --space-md: 12px;
+    --space-sm:  8px;
+  }
+
+  /* Reduce blur intensity for performance on mobile GPU */
+  .ambient-glow {
+    filter: blur(60px);
+    opacity: 0.22;
+  }
+
+  .bg-glow-1 { width: 80vw; height: 80vw; top: -20%; left: -20%; }
+  .bg-glow-2 { width: 90vw; height: 90vw; bottom: -25%; right: -25%; }
+
+  /* Slow down animations to save battery */
+  @keyframes floatGlow1 {
+    0%   { transform: translate(0, 0)    scale(1);   }
+    100% { transform: translate(5vw, 8vh) scale(0.95); }
+  }
+  @keyframes floatGlow2 {
+    0%   { transform: translate(0, 0)    scale(0.95); }
+    100% { transform: translate(-6vw, -5vh) scale(1); }
+  }
+
+  .audio-control {
+    top:   calc(var(--space-sm) + env(safe-area-inset-top));
+    right: calc(var(--space-sm) + env(safe-area-inset-right));
+    padding: 8px 13px;
+    gap: 7px;
+    border-radius: 24px;
+    /* Slightly frosted look on mobile */
+    background: rgba(3, 3, 7, 0.8);
+  }
+
   .control-label {
     font-size: 9px;
     letter-spacing: 1px;
   }
+
+  .bar {
+    width: 2px;
+    height: 12px;
+  }
+
+  @keyframes equalizerKey {
+    0%   { height: 3px;  }
+    100% { height: 14px; }
+  }
+
+  /* Hint badge smaller on phone */
+  #audioHint {
+    font-size: 11px !important;
+    padding: 5px 13px !important;
+    bottom: calc(16px + env(safe-area-inset-bottom)) !important;
+  }
 }
 
+/* ── Large / 4K  ≥1440px ────────────────────────────── */
+@media (min-width: 1440px) {
+  .audio-control {
+    top: 24px;
+    right: 24px;
+    padding: 12px 22px;
+    gap: 12px;
+  }
+
+  .control-label {
+    font-size: 12px;
+    letter-spacing: 1.8px;
+  }
+
+  .bar {
+    width: 4px;
+    height: 18px;
+  }
+
+  @keyframes equalizerKey {
+    0%   { height: 5px;  }
+    100% { height: 22px; }
+  }
+}
+
+/* ── Reduced Motion (accessibility) ─────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .ambient-glow,
+  .bar,
+  #audioHint {
+    animation: none !important;
+    transition: none !important;
+  }
+}

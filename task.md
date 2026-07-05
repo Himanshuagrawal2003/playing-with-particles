@@ -1,0 +1,104 @@
+# Particle Morphing Visualization Task Checklist
+
+- [x] Create HTML structure ([index.html](file:///c:/Users/himan/OneDrive/Desktop/timepass/index.html)) with canvas - *All overlay controls, sidebars, headers, and footers removed completely*
+- [x] Implement vanilla CSS styling ([styles.css](file:///c:/Users/himan/OneDrive/Desktop/timepass/styles.css)) - *Retained only full-screen canvas layout and ambient floating glows*
+- [x] Develop Javascript core ([app.js](file:///c:/Users/himan/OneDrive/Desktop/timepass/app.js))
+  - [x] Implement 3D rotation math and perspective projection formulas
+  - [x] **Add background song support ("add song flying jatt")**:
+    - [x] Added dynamic `<audio>` player inside [index.html](file:///c:/Users/himan/OneDrive/Desktop/timepass/index.html) configured to play `flying_jatt.mp3` or fallback `song.mp3` on loop.
+    - [x] Created a floating audio equalizer control button in [index.html](file:///c:/Users/himan/OneDrive/Desktop/timepass/index.html) styled with dynamic glassmorphism and accent color shadows in [styles.css](file:///c:/Users/himan/OneDrive/Desktop/timepass/styles.css).
+    - [x] Programmed jumping equalizer wave bars that animate dynamically during playback and freeze when paused/muted.
+    - [x] Added `initAudio()` trigger logic in [app.js](file:///c:/Users/himan/OneDrive/Desktop/timepass/app.js) to play/pause audio via button click, and start background music automatically on the user's first click anywhere on the page to bypass browser autoplay rules.
+  - [x] **Set Matrix startup intro duration to exactly 2 seconds ("this part for a 2 sec only")**:
+    - [x] Re-configured total Matrix cycle duration in `SHAPE_DURATIONS` to `2000` milliseconds.
+    - [x] Reduced the arrange morph phase window to `1000` milliseconds (1.0 second).
+  - [x] **Remove all partial sets and scrolling gaps ("gap na rahe bilkul")**:
+    - [x] Inside `generateMatrixGrid(time)`, dynamically calculate `setsPerCol = Math.floor(PARTICLE_COUNT / cols / 4)` and `gridCount = cols * setsPerCol * 4`.
+    - [x] **Remove top and bottom margins**: Increased `PARTICLE_COUNT = 3000` to extend column scroll heights significantly, letting code rain streams cover the screen from the very top pixel to the very bottom pixel on all resolutions.
+  - [x] **Add Mobile and Tablet Responsiveness ("responsive for mobile and tabls")**:
+    - [x] In `resizeCanvas()` and `loop()`, calculate zoom dynamically depending on screen size to maximize visual size without clipping:
+      - [x] Mobile (`canvas.width < 500`): set zoom factor to `0.78`.
+      - [x] Tablet (`canvas.width >= 500` and `< 1024`): set zoom factor to `1.1`.
+      - [x] Desktop (`canvas.width >= 1024`): set zoom factor to `1.55`.
+    - [x] In `generateMatrixGrid(time)`, scale the column count (`cols`) dynamically to prevent character overlapping or screen overflow on narrower displays:
+      - [x] Mobile: `cols = 6` columns.
+      - [x] Tablet: `cols = 10` columns.
+      - [x] Desktop: `cols = 15` columns.
+  - [x] **Revert Matrix startup to flat RGB mixed morphing ("back 2 step")**:
+    - [x] Restored normal particle spawning inside `init()` (loading in standard random cloud).
+    - [x] Locked camera target yaw/pitch angles and active angles to exactly `0.0` with full `baseZoom` during the entire Matrix sequence to prevent tilts, spins, or zoom glides.
+    - [x] Configured flat orthographic 2D projections to apply once the arrangement completes.
+  - [x] **Mixed RGB startup arrangement morph ("arrange hone wale particles circles and numericals ho rgb me")**:
+    - [x] In the particle drawer block, render exactly 50% particles as alphanumeric letters/numbers and 50% as standard circular glow points during the first morph phase.
+  - [x] **Decrease particle sizes for all visualizer shapes ("chota karo bhai")**:
+    - [x] Set the base `particleRadius` variable in [app.js](file:///c:/Users/himan/OneDrive/Desktop/timepass/app.js) to `2.4`.
+  - [x] **Remove all vertical gaps/spacings inside the scroll loop ("in loop no spacing")**:
+    - [x] Set vertical `setSpacing` to exactly `18px` (matching the `18px` character row height).
+    - [x] Set `paddedH = 25 * setSpacing` to loop sets continuously.
+  - [x] **Configure 15-column Matrix rain layout, slow speed, and 18px size ("15 column, slow, font size 18")**:
+    - [x] Set Matrix character font size to exactly `18px` (`bold 18px monospace`).
+    - [x] Set horizontal set character spacing to `11px` (`innerSpacing = 11`) to stack 18px letters side-by-side with no gap.
+    - [x] Configure columns layout inside `generateMatrixGrid(time)` to exactly `cols = 15` and `rows = 100` (15 parallel columns).
+    - [x] Slow down vertical scroll flow speed multiplier inside `generateMatrixGrid(time)` to **`0.08`**.
+    - [x] Configure horizontal centers using `w * 0.9` to fit 15 columns across the display window.
+  - [x] **Lay out Matrix character sets horizontally ("horizontal set banana hai")**:
+    - [x] Configure Y coordinate offsets inside `generateMatrixGrid(time)` using `y = setIndex * setSpacing + flowOffset` so that all 4 characters within a set share the same vertical height.
+    - [x] Configure X coordinate offsets inside `generateMatrixGrid(time)` using `x = colCenter + innerIndex * innerSpacing - (1.5 * innerSpacing)`.
+  - [x] **Configure 5-column Matrix rain layout with sets like A8G5, GU9C ("5 column ka set bana A8G5")**:
+    - [x] Update character pool `MATRIX_CHARS` to include all digits `0-9` and uppercase alphabets `A-Z`.
+  - [x] **Enable Matrix Rain startup arrangement ("starting me particle arrange ho starting me")**:
+    - [x] Reverted the spawn coordinates loop in `init()` back to normal random 3D positions so particles load in a scattered cloud on start.
+  - [x] **Group falling characters in sets of 4 with vertical gaps ("set bana like A3G5, spacing de")**:
+    - [x] Compute Y coordinates inside `generateMatrixGrid(time)` based on set index (`Math.floor(r/4)`) and inner index (`r%4`) offsets.
+  - [x] **Ensure Zero Rotation applies on Matrix Rain ("no rotation apply on it")**:
+    - [x] Force active camera angles (`angleX = 0.0` and `angleY = 0.0`) to instantly snap to zero on Matrix rain activation.
+  - [x] **Draw Matrix columns as perfectly straight parallel lines ("in vertically, line me aaye")**:
+    - [x] Bypass 3D rotation and perspective division formulas in `Particle.project()` when `currentShapeName === 'matrix'`.
+    - [x] Map coordinates to a flat 2D projection `px = posX * zFactor + cX` and `py = posY * zFactor + cY`.
+  - [x] **Configure Matrix Character Rain parameters ("character size 18px, flow off-screen, no rotation")**:
+    - [x] Add `50px` buffer padding in `generateMatrixGrid(time)` so that characters load from completely above the viewport and scroll completely below the viewport before wrap-around.
+  - [x] **Configure Matrix Rain as a Startup-Only Intro Sequence ("bo koi shape nahi hai, loop se hata do")**:
+    - [x] Set initial `currentShapeName = 'matrix'` to load the character rain immediately on startup.
+    - [x] Remove `'matrix'` from `SHAPE_ORDER` loop array so that the alphanumeric code rain only runs once at load time, and the visualizer subsequently cycles exclusively through the 8 geometric shapes.
+  - [x] **Lock Matrix Rain Camera Flat-On ("normal rakhna, only upper se niche aaye")**:
+    - [x] In the main `loop()`, when `currentShapeName === 'matrix'`, lock camera target yaw `targetAngleY = 0.0` and target pitch `targetAngleX = 0.0` to force columns to drop perfectly straight vertically down the screen.
+    - [x] Set `targetZoom = baseZoom` statically during the Matrix sequence to disable zoom glides, ensuring columns remain full-screen.
+  - [x] **Add Flowing Alphanumeric Matrix Rain shape ("web page start ho to 1,2,3,4,5 and alphabets green color me")**:
+    - [x] Define a character pool containing `1, 2, 3, 4, 5` and letters `a-z`, `A-Z`.
+    - [x] Assign `this.char` properties to each particle on start.
+    - [x] Update the particle drawer in `loop()` so that when `currentShapeName === 'matrix'`, it renders characters using bold monospaced `ctx.fillText` rather than default circle shapes.
+  - [x] **Configure Matrix Code Rain opener to occupy Full Display ("only matrix rain occupy full display")**:
+    - [x] Update the width and height parameters in `generateMatrixGrid(time)` dynamically to `window.innerWidth / zoom` and `window.innerHeight / zoom` so the falling letters cover the entire display viewport.
+  - [x] **Configure Visualizer to Cycle 8 Active Shapes (Sphere, Donut, Helix, Cube, Pipe, Cylinder, Cone, Infinity)**:
+    - [x] Set `SHAPE_ORDER` to `['sphere', 'donut', 'helix', 'cube', 'pipe', 'cylinder', 'cone', 'infinity']`.
+    - [x] **Sphere** (Circle): Golden ratio spiral point distribution.
+    - [x] **Donut**: Dense spiraling donut structure ($R=110, r=70$).
+    - [x] **Helix**: Intertwined double helix with connected horizontal rungs.
+    - [x] **Cube**: Clean 6-faced grid boundary box.
+    - [x] **Pipe**: Horizontal cylinder tube extending across the display.
+    - [x] **Cylinder**: Vertical cylindrical cage mesh.
+    - [x] **Cone**: Pointed vertical cone mesh.
+    - [x] **Infinity Ribbon**: 3D horizontal double-layer nested ribbon ($\infty$).
+  - [x] Code particle interpolation with easing (morphing transition logic)
+  - [x] Implement dynamic particle size weight and temporal oscillation (shimmering/pulsing size effects)
+  - [x] **Accelerate All Visualizer Timings & Speeds ("all working in speed")**:
+    - [x] Shorten overall shape cycle durations in `SHAPE_DURATIONS` (Cube: 4.2s, Sphere: 4.5s, Donut/Pipe/Cylinder/Cone: 4.8s, Helix: 5.0s, Infinity: 5.2s).
+    - [x] Increase morph easing speeds: Phase 1 scatter `0.22`, Phase 2 arrange `0.055`, Phase 3 showcase `0.025`.
+  - [x] **Disable Manual Camera Control ("mouse ke pass control na ho")**:
+    - [x] Remove drag camera rotation listeners (`mousedown`, `mouseup`, `touchstart`) and wheel zoom hooks.
+  - [x] **Implement Dynamic Camera Zoom Gliding ("arrange time me bade ho jaye, showcase me normal")**:
+    - [x] **Phase 2 (Arrange)**: Set `targetZoom = baseZoom * 1.22` to zoom in close, making shapes appear very large while organizing.
+    - [x] **Phase 3 (Showcase)**: Return `targetZoom = baseZoom` to smoothly zoom out to normal full-display size.
+  - [x] **Implement Dynamic Shape-Dependent Particle Sizes ("particle kisi shape me bade, kisi me chote")**:
+    - [x] Add `SHAPE_PARTICLE_SIZES` config mapping unique base size factors per shape (Cube: 0.7, Donut: 1.6, Infinity: 1.4).
+  - [x] **Enable Wireframe Outline Connectivity ("shape define ho")**:
+    - [x] Enabled connection lines by setting `connectionThreshold = 38` to bind particles into structural wireframe outlines.
+    - [x] Implemented vertical connection links `i -> i + 30` to draw 3D cage meshes for Cylinder, Cone, and Pipe.
+  - [x] **Implement Falling Hacking Code Rain Overlay ("hacking time per code run ho")**:
+    - [x] Code columns of scrolling terminal text in monospaced font rendering actual project script statements.
+  - [x] **Restrict Transition Scatter Scale to Local Cloud ("shape lete time full na jaye")**:
+    - [x] Limit maximum dispersion radius in `generateScatter()` to a tight zone (`110px - 210px`) so particles do not expand to fill the entire screen during morph switches.
+  - [x] Create `generateScatter()` mathematical coordinate generator to define wide particle dispersion
+  - [x] Wordwrap fix for app.js brackets mismatch errors
+- [x] Verify visual rendering and engine stability (60 FPS local hosting)
+- [x] Create walkthrough documentation with final details
